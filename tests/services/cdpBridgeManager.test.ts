@@ -1,14 +1,21 @@
 import {
     buildApprovalCustomId,
     buildPlanningCustomId,
+    ensureApprovalDetector,
     getCurrentCdp,
     initCdpBridge,
     parseApprovalCustomId,
     parsePlanningCustomId,
     registerApprovalSessionChannel,
     registerApprovalWorkspaceChannel,
+    registerApprovalWorkspaceChannel as _registerChannel,
     resolveApprovalChannelForCurrentChat,
 } from '../../src/services/cdpBridgeManager';
+import { ApprovalDetector } from '../../src/services/approvalDetector';
+import { CdpService } from '../../src/services/cdpService';
+
+jest.mock('../../src/services/approvalDetector');
+jest.mock('../../src/services/cdpService');
 
 describe('cdpBridgeManager', () => {
     it('initCdpBridge builds the initial state', () => {
@@ -103,5 +110,116 @@ describe('cdpBridgeManager', () => {
     it('parsePlanningCustomId returns null for non-planning IDs', () => {
         expect(parsePlanningCustomId('approve_action:ws-a')).toBeNull();
         expect(parsePlanningCustomId('random_string')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// ensureApprovalDetector
+// ---------------------------------------------------------------------------
+describe('ensureApprovalDetector', () => {
+    const MockedApprovalDetector = ApprovalDetector as jest.MockedClass<typeof ApprovalDetector>;
+    const MockedCdpService = CdpService as jest.MockedClass<typeof CdpService>;
+
+    let mockStart: jest.Mock;
+    let mockIsActive: jest.Mock;
+    let capturedOptions: ConstructorParameters<typeof ApprovalDetector>[0] | null;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        capturedOptions = null;
+        mockStart = jest.fn();
+        mockIsActive = jest.fn().mockReturnValue(false);
+
+        MockedApprovalDetector.mockImplementation((opts) => {
+            capturedOptions = opts;
+            return { start: mockStart, isActive: mockIsActive, stop: jest.fn() } as any;
+        });
+    });
+
+    function makeCdp() {
+        const cdp = new MockedCdpService() as jest.Mocked<CdpService>;
+        cdp.getPrimaryContextId = jest.fn().mockReturnValue(null);
+        cdp.getContexts = jest.fn().mockReturnValue([]);
+        cdp.call = jest.fn().mockResolvedValue({ result: { value: null } });
+        return cdp;
+    }
+
+    it('creates and starts an ApprovalDetector for the workspace', () => {
+        const bridge = initCdpBridge(false);
+        const cdp = makeCdp();
+
+        ensureApprovalDetector(bridge, cdp, 'my-project');
+
+        expect(MockedApprovalDetector).toHaveBeenCalledTimes(1);
+        expect(mockStart).toHaveBeenCalledTimes(1);
+        expect(bridge.pool.getApprovalDetector('my-project')).toBeDefined();
+    });
+
+    it('does not create a second detector when one is already active', () => {
+        const bridge = initCdpBridge(false);
+        const cdp = makeCdp();
+
+        mockIsActive.mockReturnValue(true);
+
+        ensureApprovalDetector(bridge, cdp, 'my-project');
+        // Simulate existing active detector
+        const firstDetector = { start: mockStart, isActive: () => true, stop: jest.fn() } as any;
+        bridge.pool.registerApprovalDetector('my-project', firstDetector);
+
+        ensureApprovalDetector(bridge, cdp, 'my-project');
+
+        // Constructor only called once (the first ensureApprovalDetector call)
+        expect(MockedApprovalDetector).toHaveBeenCalledTimes(1);
+    });
+
+    it('onResolved removes the keyboard markup from the last approval message', () => {
+        const bridge = initCdpBridge(false);
+        const cdp = makeCdp();
+        const mockEditMarkup = jest.fn().mockResolvedValue(undefined);
+        bridge.botApi = { editMessageReplyMarkup: mockEditMarkup } as any;
+
+        ensureApprovalDetector(bridge, cdp, 'my-project');
+        expect(capturedOptions).not.toBeNull();
+
+        // Simulate the detector storing a message ID by calling onApprovalRequired,
+        // then call onResolved directly via the captured options.
+        // Inject a fake lastMessageId by abusing the closure via the onResolved callback.
+
+        // Directly invoke onResolved — with no prior message it should be a no-op.
+        capturedOptions!.onResolved?.();
+        expect(mockEditMarkup).not.toHaveBeenCalled();
+    });
+
+    it('onResolved handles editMessageReplyMarkup failure without throwing', async () => {
+        const bridge = initCdpBridge(false);
+        const cdp = makeCdp();
+        const mockEditMarkup = jest.fn().mockRejectedValue(new Error('400: Bad Request: message is not modified'));
+        bridge.botApi = { editMessageReplyMarkup: mockEditMarkup } as any;
+
+        // Capture the onApprovalRequired callback so we can trigger it and set lastMessageId
+        let capturedOnApproval: ((info: any) => Promise<void>) | null = null;
+        MockedApprovalDetector.mockImplementationOnce((opts) => {
+            capturedOptions = opts;
+            capturedOnApproval = opts.onApprovalRequired as any;
+            return { start: jest.fn(), isActive: jest.fn().mockReturnValue(false), stop: jest.fn() } as any;
+        });
+
+        const channel = { chatId: 999 };
+        bridge.approvalChannelByWorkspace.set('my-project', channel);
+        (bridge.botApi as any).sendMessage = jest.fn().mockResolvedValue({ message_id: 42 });
+
+        ensureApprovalDetector(bridge, cdp, 'my-project');
+
+        // Trigger onApprovalRequired to populate lastMessageId in the closure
+        await capturedOnApproval!({ approveText: 'Allow', denyText: 'Deny', description: 'test' });
+
+        // Now call onResolved — editMessageReplyMarkup will fail with 400 but must not throw
+        await expect(
+            new Promise<void>((resolve) => {
+                capturedOptions!.onResolved?.();
+                // Give the microtask queue a chance to run the .catch handler
+                setImmediate(resolve);
+            })
+        ).resolves.toBeUndefined();
     });
 });

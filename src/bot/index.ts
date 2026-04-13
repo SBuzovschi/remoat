@@ -1174,12 +1174,12 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
     bot.command('close', async (ctx) => {
         const ch = getChannel(ctx);
         const resolved = await resolveWorkspaceAndCdp(ch);
-        const cdp = resolved?.cdp ?? getCurrentCdp(bridge);
+        const cdp = (resolved.ok ? resolved.cdp : null) ?? getCurrentCdp(bridge);
         if (!cdp) {
             await ctx.reply('⚠️ No active Antigravity session to close.');
             return;
         }
-        const projectName = resolved?.projectName ?? cdp.getCurrentWorkspaceName();
+        const projectName = (resolved.ok ? resolved.projectName : null) ?? cdp.getCurrentWorkspaceName();
         if (!projectName) {
             await ctx.reply('⚠️ No active project bound to this chat. Cannot close.');
             return;
@@ -1218,6 +1218,38 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
             await ctx.reply(`❌ Error during stop: ${e.message}`);
         }
     });
+
+    // /allow, /allow_chat, /deny commands — manual retry for stuck approval dialogs
+    const handleApprovalCommand = async (
+        ctx: Context,
+        action: 'approve' | 'always_allow' | 'deny',
+    ) => {
+        const ch = getChannel(ctx);
+        const resolved = await resolveWorkspaceAndCdp(ch);
+        const projectName = (resolved.ok ? resolved.projectName : null) ?? bridge.lastActiveWorkspace;
+        const detector = projectName ? bridge.pool.getApprovalDetector(projectName) : undefined;
+
+        if (!detector) {
+            await ctx.reply('⚠️ No approval detector found. Make sure a workspace is connected.');
+            return;
+        }
+
+        let success = false;
+        let actionLabel = '';
+        if (action === 'approve') { success = await detector.approveButton(); actionLabel = 'Allow'; }
+        else if (action === 'always_allow') { success = await detector.alwaysAllowButton(); actionLabel = 'Allow Chat'; }
+        else { success = await detector.denyButton(); actionLabel = 'Deny'; }
+
+        if (success) {
+            await ctx.reply(`✅ ${actionLabel} sent to IDE — waiting for response.`);
+        } else {
+            await ctx.reply('⚠️ Approval button not found in IDE. The dialog may have already been resolved or is not visible.');
+        }
+    };
+
+    bot.command('allow', (ctx) => handleApprovalCommand(ctx, 'approve'));
+    bot.command('allow_chat', (ctx) => handleApprovalCommand(ctx, 'always_allow'));
+    bot.command('deny', (ctx) => handleApprovalCommand(ctx, 'deny'));
 
     // /project command
     bot.command('project', async (ctx) => {
@@ -1502,10 +1534,12 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
             else { success = await detector.denyButton(); actionLabel = 'Deny'; }
 
             if (success) {
-                try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch (e) { logger.debug('[editMsg] Telegram edit failed (expected for unmodified):', e); }
-                await ctx.answerCallbackQuery({ text: `${actionLabel} executed.` });
+                // Do not remove the keyboard optimistically — onResolved() removes it when
+                // the DOM buttons actually disappear. This keeps the keyboard visible for
+                // retry if the CDP click was dispatched but Antigravity did not act on it.
+                await ctx.answerCallbackQuery({ text: `${actionLabel} sent — waiting for IDE response…` });
             } else {
-                await ctx.answerCallbackQuery({ text: 'Button not found.' });
+                await ctx.answerCallbackQuery({ text: 'Button not found in IDE. Use /allow or /deny to retry.' });
             }
             return;
         }
@@ -2147,6 +2181,9 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
                     { command: 'template', description: 'Show prompt templates' },
                     { command: 'template_add', description: 'Register a template' },
                     { command: 'template_delete', description: 'Delete a template' },
+                    { command: 'allow', description: 'Approve pending IDE confirmation dialog' },
+                    { command: 'allow_chat', description: 'Always-allow pending IDE confirmation dialog' },
+                    { command: 'deny', description: 'Deny pending IDE confirmation dialog' },
                     { command: 'autoaccept', description: 'Toggle auto-approve mode' },
                     { command: 'status', description: 'Bot status overview' },
                     { command: 'ping', description: 'Check latency' },

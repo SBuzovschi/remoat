@@ -261,7 +261,7 @@ export function ensureApprovalDetector(
             lastMessageId = null;
             lastMessageChatId = null;
             bridge.botApi.editMessageReplyMarkup(chatId, msgId, { reply_markup: undefined })
-                .catch(logger.error);
+                .catch((e) => logger.debug('[ApprovalDetector] Markup remove failed (expected if already removed):', e));
         },
         onApprovalRequired: async (info: ApprovalInfo) => {
             logger.debug(`[ApprovalDetector:${projectName}] Approval detected`);
@@ -336,7 +336,7 @@ export function ensurePlanningDetector(
             lastMessageId = null;
             lastMessageChatId = null;
             bridge.botApi.editMessageReplyMarkup(chatId, msgId, { reply_markup: undefined })
-                .catch(logger.error);
+                .catch((e) => logger.debug('[PlanningDetector] Markup remove failed (expected if already removed):', e));
         },
         onPlanningRequired: async (info: PlanningInfo) => {
             logger.debug(`[PlanningDetector:${projectName}] Planning detected`);
