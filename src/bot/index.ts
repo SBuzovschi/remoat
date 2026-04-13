@@ -40,6 +40,11 @@ import {
     parseErrorPopupCustomId,
     parsePlanningCustomId,
 } from '../services/cdpBridgeManager';
+import {
+    resolveWorkspaceAndCdp as resolveWorkspaceAndCdpImpl,
+    channelKeyFromChannel,
+    ResolveOutcome,
+} from '../services/workspaceResolver';
 import { classifyAssistantSegments, extractAssistantSegmentsPayloadScript } from '../services/assistantDomExtractor';
 import { buildModeModelLines, splitForEmbedDescription } from '../utils/streamMessageFormatter';
 import { formatForTelegram, splitOutputAndLogs, escapeHtml, splitTelegramHtml } from '../utils/telegramFormatter';
@@ -133,9 +138,8 @@ const planEditPendingChannels = new Map<string, { projectName: string }>();
 /** Cached plan content pages per channel */
 const planContentCache = new Map<string, string[]>();
 
-function channelKey(ch: TelegramChannel): string {
-    return ch.threadId ? `${ch.chatId}:${ch.threadId}` : String(ch.chatId);
-}
+/** Re-export for use throughout this file */
+const channelKey = channelKeyFromChannel;
 
 function createSerialTaskQueue(queueName: string, traceId: string): (task: () => Promise<void>, label?: string) => Promise<void> {
     let queue: Promise<void> = Promise.resolve();
@@ -964,26 +968,21 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
         threadId: ctx.callbackQuery?.message?.message_thread_id ?? undefined,
     });
 
-    const resolveWorkspaceAndCdp = async (ch: TelegramChannel): Promise<{ cdp: CdpService; projectName: string; workspacePath: string } | null> => {
-        const key = channelKey(ch);
-        const binding = workspaceBindingRepo.findByChannelId(key);
-        if (!binding) return null;
-        const workspacePath = workspaceService.getWorkspacePath(binding.workspacePath);
-        try {
-            const cdp = await bridge.pool.getOrConnect(workspacePath);
-            const projectName = bridge.pool.extractProjectName(workspacePath);
-            bridge.lastActiveWorkspace = projectName;
-            bridge.lastActiveChannel = ch;
-            registerApprovalWorkspaceChannel(bridge, projectName, ch);
-            ensureApprovalDetector(bridge, cdp, projectName);
-            ensureErrorPopupDetector(bridge, cdp, projectName);
-            ensurePlanningDetector(bridge, cdp, projectName);
-            return { cdp, projectName, workspacePath };
-        } catch (e) {
-            logger.error(`[resolveWorkspaceAndCdp] Connection failed:`, e);
-            return null;
-        }
-    };
+    const resolveWorkspaceAndCdp = (ch: TelegramChannel): Promise<ResolveOutcome> =>
+        resolveWorkspaceAndCdpImpl(ch, {
+            findBinding: (key) => workspaceBindingRepo.findByChannelId(key),
+            getWorkspacePath: (name) => workspaceService.getWorkspacePath(name),
+            getOrConnect: (fullPath) => bridge.pool.getOrConnect(fullPath),
+            extractProjectName: (fullPath) => bridge.pool.extractProjectName(fullPath),
+            onConnected: (cdp, projectName, channel) => {
+                bridge.lastActiveWorkspace = projectName;
+                bridge.lastActiveChannel = channel;
+                registerApprovalWorkspaceChannel(bridge, projectName, channel);
+                ensureApprovalDetector(bridge, cdp, projectName);
+                ensureErrorPopupDetector(bridge, cdp, projectName);
+                ensurePlanningDetector(bridge, cdp, projectName);
+            },
+        });
 
     const replyHtml = async (ctx: Context, text: string, keyboard?: InlineKeyboard) => {
         await ctx.reply(text, {
@@ -1043,7 +1042,7 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
     bot.command('model', async (ctx) => {
         const ch = getChannel(ctx);
         const resolved = await resolveWorkspaceAndCdp(ch);
-        const getCdp = (): CdpService | null => resolved?.cdp ?? getCurrentCdp(bridge);
+        const getCdp = (): CdpService | null => (resolved.ok ? resolved.cdp : null) ?? getCurrentCdp(bridge);
         const modelName = ctx.match?.trim();
         if (modelName) {
             const cdp = getCdp();
@@ -1198,7 +1197,7 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
     bot.command('stop', async (ctx) => {
         const ch = getChannel(ctx);
         const resolved = await resolveWorkspaceAndCdp(ch);
-        const cdp = resolved?.cdp ?? getCurrentCdp(bridge);
+        const cdp = (resolved.ok ? resolved.cdp : null) ?? getCurrentCdp(bridge);
         if (!cdp) { await ctx.reply('⚠️ Not connected to CDP.'); return; }
 
         try {
@@ -1457,7 +1456,7 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
             if (!template) { await ctx.answerCallbackQuery({ text: 'Template not found.' }); return; }
 
             const resolved = await resolveWorkspaceAndCdp(ch);
-            if (!resolved) {
+            if (!resolved.ok) {
                 const cdp = getCurrentCdp(bridge);
                 if (!cdp) { await ctx.answerCallbackQuery({ text: 'Not connected.' }); return; }
                 promptDispatcher.send({ channel: ch, prompt: template.prompt, cdp, inboundImages: [], options: { chatSessionService, chatSessionRepo, topicManager, titleGenerator } }).catch((e) => logger.error('[template] dispatch failed:', e));
@@ -1810,7 +1809,7 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
             planEditPendingChannels.delete(key);
             const editPrompt = `Please revise the plan based on the following feedback:\n\n${text}`;
             const resolved = await resolveWorkspaceAndCdp(ch);
-            const cdp = resolved?.cdp ?? getCurrentCdp(bridge);
+            const cdp = (resolved.ok ? resolved.cdp : null) ?? getCurrentCdp(bridge);
             if (!cdp) {
                 await ctx.reply('Not connected to CDP.');
                 return;
@@ -1877,8 +1876,8 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
 
         // Regular message — route to Antigravity
         const resolved = await resolveWorkspaceAndCdp(ch);
-        if (!resolved) {
-            await ctx.reply('No project is configured for this chat. Use /project to select one.');
+        if (!resolved.ok) {
+            await ctx.reply(resolved.message);
             return;
         }
 
@@ -1961,7 +1960,7 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
         const caption = ctx.message.caption?.trim() || 'Please review the attached images and respond accordingly.';
 
         const resolved = await resolveWorkspaceAndCdp(ch);
-        if (!resolved) { await ctx.reply('No project configured. Use /project first.'); return; }
+        if (!resolved.ok) { await ctx.reply(resolved.message); return; }
 
         const inboundImages = await downloadTelegramImages(
             bot.api,
@@ -2026,8 +2025,8 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
         }
 
         const resolved = await resolveWorkspaceAndCdp(ch);
-        if (!resolved) {
-            await ctx.reply('No project configured. Use /project first.');
+        if (!resolved.ok) {
+            await ctx.reply(resolved.message);
             return;
         }
 
