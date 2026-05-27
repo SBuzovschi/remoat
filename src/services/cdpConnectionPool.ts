@@ -7,6 +7,7 @@ import { ApprovalDetector } from './approvalDetector';
 import { ErrorPopupDetector } from './errorPopupDetector';
 import { PlanningDetector } from './planningDetector';
 import { UserMessageDetector } from './userMessageDetector';
+import { QuestionDetector } from './questionDetector';
 
 /**
  * Pool that manages independent CdpService instances per workspace.
@@ -26,6 +27,7 @@ export class CdpConnectionPool extends EventEmitter {
     private readonly errorPopupDetectors = new Map<string, ErrorPopupDetector>();
     private readonly planningDetectors = new Map<string, PlanningDetector>();
     private readonly userMessageDetectors = new Map<string, UserMessageDetector>();
+    private readonly questionDetectors = new Map<string, QuestionDetector>();
     private readonly connectingPromises = new Map<string, Promise<CdpService>>();
     private readonly cdpOptions: CdpServiceOptions;
 
@@ -129,6 +131,12 @@ export class CdpConnectionPool extends EventEmitter {
             userMsgDetector.stop();
             this.userMessageDetectors.delete(projectName);
         }
+
+        const questionDetector = this.questionDetectors.get(projectName);
+        if (questionDetector) {
+            questionDetector.stop();
+            this.questionDetectors.delete(projectName);
+        }
     }
 
     /**
@@ -228,6 +236,24 @@ export class CdpConnectionPool extends EventEmitter {
      */
     getUserMessageDetector(projectName: string): UserMessageDetector | undefined {
         return this.userMessageDetectors.get(projectName);
+    }
+
+    /**
+     * Register a question detector for a workspace.
+     */
+    registerQuestionDetector(projectName: string, detector: QuestionDetector): void {
+        const existing = this.questionDetectors.get(projectName);
+        if (existing && existing.isActive()) {
+            existing.stop();
+        }
+        this.questionDetectors.set(projectName, detector);
+    }
+
+    /**
+     * Get the question detector for a workspace.
+     */
+    getQuestionDetector(projectName: string): QuestionDetector | undefined {
+        return this.questionDetectors.get(projectName);
     }
 
     /**

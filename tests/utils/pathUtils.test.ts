@@ -50,7 +50,7 @@ describe('pathUtils', () => {
         it('returns open -a hint on macOS', () => {
             withPlatform('darwin', () => {
                 expect(getAntigravityCdpHint(9222)).toBe(
-                    'open -a Antigravity --args --remote-debugging-port=9222',
+                    'open -a Antigravity IDE --args --remote-debugging-port=9222',
                 );
             });
         });
@@ -58,7 +58,7 @@ describe('pathUtils', () => {
         it('returns exe hint on Windows', () => {
             withPlatform('win32', () => {
                 expect(getAntigravityCdpHint(9222)).toBe(
-                    'Antigravity.exe --remote-debugging-port=9222',
+                    'Antigravity IDE.exe --remote-debugging-port=9222',
                 );
             });
         });
@@ -66,7 +66,7 @@ describe('pathUtils', () => {
         it('returns lowercase hint on Linux', () => {
             withPlatform('linux', () => {
                 expect(getAntigravityCdpHint(9222)).toBe(
-                    'antigravity --remote-debugging-port=9222',
+                    'antigravity ide --remote-debugging-port=9222',
                 );
             });
         });

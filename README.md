@@ -165,7 +165,7 @@ From source, you can also use the bundled launcher scripts:
 | Platform | Method |
 |----------|--------|
 | macOS    | Double-click `start_antigravity_mac.command` (run `chmod +x` first time) |
-| Windows  | Double-click `start_antigravity_ide_remote` |
+| Windows  | Double-click `start_antigravity_win.bat` |
 | Linux    | Set `ANTIGRAVITY_PATH=/path/to/antigravity` in `.env`, then `remoat open` |
 
 > Launch Antigravity first, then start the bot. It connects automatically.
@@ -299,7 +299,6 @@ cp .env.example .env  # fill in your values
 npm run dev           # start with auto-reload
 npm test              # run the test suite
 ```
-
 
 ## License
 

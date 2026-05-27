@@ -4,6 +4,7 @@ import { t } from '../utils/i18n';
 import { logger } from '../utils/logger';
 import { escapeHtml } from '../utils/telegramFormatter';
 import { ApprovalDetector, ApprovalInfo } from './approvalDetector';
+import { QuestionDetector, QuestionInfo } from './questionDetector';
 import { AutoAcceptService } from './autoAcceptService';
 import { CdpConnectionPool } from './cdpConnectionPool';
 import { CdpService } from './cdpService';
@@ -39,6 +40,8 @@ const PLANNING_PROCEED_ACTION_PREFIX = 'planning_proceed_action';
 const ERROR_POPUP_DISMISS_ACTION_PREFIX = 'error_popup_dismiss_action';
 const ERROR_POPUP_COPY_DEBUG_ACTION_PREFIX = 'error_popup_copy_debug_action';
 const ERROR_POPUP_RETRY_ACTION_PREFIX = 'error_popup_retry_action';
+const QUESTION_OPTION_ACTION_PREFIX = 'q_opt';
+const QUESTION_SUBMIT_ACTION_PREFIX = 'q_sub';
 
 function normalizeSessionTitle(title: string): string {
     return title.trim().toLowerCase();
@@ -181,6 +184,62 @@ export function parseErrorPopupCustomId(customId: string): { action: 'dismiss' |
             const [projectName, channelId] = rest.split(':');
             return { action, projectName: projectName || null, channelId: channelId || null };
         }
+    }
+    return null;
+}
+
+export function buildQuestionOptionCustomId(
+    optionIndex: number,
+    optionText: string,
+    isMultiSelect: boolean,
+    projectName: string,
+    channelId?: string,
+): string {
+    const cleanText = optionText.replace(/[:]/g, ' ').substring(0, 15).trim();
+    const parts = [QUESTION_OPTION_ACTION_PREFIX, projectName, optionIndex, isMultiSelect ? '1' : '0', cleanText];
+    if (channelId && channelId.trim().length > 0) {
+        parts.push(channelId);
+    }
+    return parts.join(':');
+}
+
+export function parseQuestionOptionCustomId(customId: string): { optionIndex: number; optionText: string; isMultiSelect: boolean; projectName: string | null; channelId: string | null } | null {
+    if (customId.startsWith(`${QUESTION_OPTION_ACTION_PREFIX}:`)) {
+        const rest = customId.substring(`${QUESTION_OPTION_ACTION_PREFIX}:`.length);
+        const [projectName, optionIndexStr, isMultiSelectStr, optionText, channelId] = rest.split(':');
+        return {
+            projectName: projectName || null,
+            optionIndex: parseInt(optionIndexStr, 10),
+            isMultiSelect: isMultiSelectStr === '1',
+            optionText: optionText || '',
+            channelId: channelId || null
+        };
+    }
+    return null;
+}
+
+export function buildQuestionSubmitCustomId(
+    submitText: string,
+    projectName: string,
+    channelId?: string,
+): string {
+    const cleanText = submitText.replace(/[:]/g, ' ').substring(0, 15).trim();
+    const parts = [QUESTION_SUBMIT_ACTION_PREFIX, projectName, cleanText];
+    if (channelId && channelId.trim().length > 0) {
+        parts.push(channelId);
+    }
+    return parts.join(':');
+}
+
+export function parseQuestionSubmitCustomId(customId: string): { submitText: string; projectName: string | null; channelId: string | null } | null {
+    if (customId.startsWith(`${QUESTION_SUBMIT_ACTION_PREFIX}:`)) {
+        const rest = customId.substring(`${QUESTION_SUBMIT_ACTION_PREFIX}:`.length);
+        const [projectName, submitText, channelId] = rest.split(':');
+        return {
+            projectName: projectName || null,
+            submitText: submitText || '',
+            channelId: channelId || null
+        };
     }
     return null;
 }
@@ -449,4 +508,73 @@ export function ensureUserMessageDetector(
     detector.start();
     bridge.pool.registerUserMessageDetector(projectName, detector);
     logger.debug(`[UserMessageDetector:${projectName}] Started`);
+}
+
+export function ensureQuestionDetector(
+    bridge: CdpBridge,
+    cdp: CdpService,
+    projectName: string,
+): void {
+    const existing = bridge.pool.getQuestionDetector(projectName);
+    if (existing && existing.isActive()) return;
+
+    let lastMessageId: number | null = null;
+    let lastMessageChatId: number | string | null = null;
+
+    const detector = new QuestionDetector({
+        cdpService: cdp,
+        pollIntervalMs: 2000,
+        onResolved: () => {
+            if (!lastMessageId || !lastMessageChatId || !bridge.botApi) return;
+            const msgId = lastMessageId;
+            const chatId = lastMessageChatId;
+            lastMessageId = null;
+            lastMessageChatId = null;
+            bridge.botApi.editMessageReplyMarkup(chatId, msgId, { reply_markup: undefined })
+                .catch((e) => logger.debug('[QuestionDetector] Markup remove failed (expected if already removed):', e));
+        },
+        onQuestionRequired: async (info: QuestionInfo) => {
+            logger.debug(`[QuestionDetector:${projectName}] Question detected`);
+
+            const currentChatTitle = await getCurrentChatTitle(cdp);
+            const targetChannel = resolveApprovalChannelForCurrentChat(bridge, projectName, currentChatTitle);
+
+            if (!targetChannel || !bridge.botApi) {
+                logger.warn(`[QuestionDetector:${projectName}] Skipped — no target channel`);
+                return;
+            }
+
+            const targetChannelStr = targetChannel.threadId ? String(targetChannel.threadId) : String(targetChannel.chatId);
+
+            let text = `❓ <b>Antigravity Question</b>\n\n`;
+            text += `<b>${escapeHtml(info.question)}</b>\n\n`;
+            text += `<i>Pick an option:</i>\n`;
+            text += `<b>Workspace:</b> ${escapeHtml(projectName)}`;
+
+            const keyboard = new InlineKeyboard();
+            info.options.forEach((opt, index) => {
+                const prefix = opt.isMultiSelect ? '☑️' : '⚪';
+                const label = opt.text.substring(0, 30);
+                keyboard.text(`${prefix} ${label}`, buildQuestionOptionCustomId(opt.index, opt.text, opt.isMultiSelect, projectName, targetChannelStr));
+                if (index % 2 === 1 || opt.text.length > 15) {
+                    keyboard.row();
+                }
+            });
+
+            if (info.submitText) {
+                keyboard.row();
+                keyboard.text(`✅ ${info.submitText}`, buildQuestionSubmitCustomId(info.submitText, projectName, targetChannelStr));
+            }
+
+            const msgId = await sendTelegramMessage(bridge.botApi, targetChannel, text, keyboard);
+            if (msgId) {
+                lastMessageId = msgId;
+                lastMessageChatId = targetChannel.chatId;
+            }
+        },
+    });
+
+    detector.start();
+    bridge.pool.registerQuestionDetector(projectName, detector);
+    logger.debug(`[QuestionDetector:${projectName}] Started`);
 }

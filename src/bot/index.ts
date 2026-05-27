@@ -39,6 +39,9 @@ import {
     parseApprovalCustomId,
     parseErrorPopupCustomId,
     parsePlanningCustomId,
+    ensureQuestionDetector,
+    parseQuestionOptionCustomId,
+    parseQuestionSubmitCustomId,
 } from '../services/cdpBridgeManager';
 import {
     resolveWorkspaceAndCdp as resolveWorkspaceAndCdpImpl,
@@ -981,6 +984,7 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
                 ensureApprovalDetector(bridge, cdp, projectName);
                 ensureErrorPopupDetector(bridge, cdp, projectName);
                 ensurePlanningDetector(bridge, cdp, projectName);
+                ensureQuestionDetector(bridge, cdp, projectName);
             },
         });
 
@@ -1540,6 +1544,47 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
                 await ctx.answerCallbackQuery({ text: `${actionLabel} sent — waiting for IDE response…` });
             } else {
                 await ctx.answerCallbackQuery({ text: 'Button not found in IDE. Use /allow or /deny to retry.' });
+            }
+            return;
+        }
+
+        // Question option selection
+        const questionOptionAction = parseQuestionOptionCustomId(data);
+        if (questionOptionAction) {
+            const projectName = questionOptionAction.projectName ?? bridge.lastActiveWorkspace;
+            const detector = projectName ? bridge.pool.getQuestionDetector(projectName) : undefined;
+            if (!detector) { await ctx.answerCallbackQuery({ text: 'Question detector not found.' }); return; }
+
+            const lastInfo = detector.getLastDetectedInfo();
+            const submitText = lastInfo?.submitText || null;
+
+            const success = await detector.clickOption(
+                questionOptionAction.optionIndex,
+                questionOptionAction.optionText,
+                questionOptionAction.isMultiSelect,
+                submitText
+            );
+
+            if (success) {
+                await ctx.answerCallbackQuery({ text: `Selected: ${questionOptionAction.optionText}` });
+            } else {
+                await ctx.answerCallbackQuery({ text: 'Option not found in IDE. The question may have already been resolved.' });
+            }
+            return;
+        }
+
+        // Question submit
+        const questionSubmitAction = parseQuestionSubmitCustomId(data);
+        if (questionSubmitAction) {
+            const projectName = questionSubmitAction.projectName ?? bridge.lastActiveWorkspace;
+            const detector = projectName ? bridge.pool.getQuestionDetector(projectName) : undefined;
+            if (!detector) { await ctx.answerCallbackQuery({ text: 'Question detector not found.' }); return; }
+
+            const success = await detector.clickSubmit(questionSubmitAction.submitText);
+            if (success) {
+                await ctx.answerCallbackQuery({ text: 'Submitted response to IDE.' });
+            } else {
+                await ctx.answerCallbackQuery({ text: 'Submit button not found in IDE.' });
             }
             return;
         }
