@@ -1,20 +1,5 @@
 # Security Policy
 
-## Reporting a Vulnerability
-
-If you discover a security vulnerability in Remoat, please report it responsibly.
-
-**Report via:** [GitHub Security Advisories](https://github.com/optimistengineer/Remoat/security/advisories/new) (preferred) or open a [private issue](https://github.com/optimistengineer/Remoat/issues)
-
-Include:
-
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
-
-We'll acknowledge receipt within 48 hours and aim to release a fix within 7 days for critical issues. Please don't open a public GitHub issue for security vulnerabilities.
-
 ## Security Model
 
 Remoat is designed to run on your local machine with no external attack surface.

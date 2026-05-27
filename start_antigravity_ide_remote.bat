@@ -4,9 +4,9 @@ echo Запуск процессов antigravity...
 :: Запускаем первую команду через call
 call remoat open
 
-:: Ожидание 15 секунд
-echo Ожидание 15 секунд...
-timeout /t 15 /nobreak
+:: Ожидание 5 секунд
+echo Ожидание 5 секунд...
+timeout /t 5 /nobreak
 
 :: Запускаем вторую команду через call
 call remoat start
