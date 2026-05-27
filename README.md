@@ -300,11 +300,6 @@ npm run dev           # start with auto-reload
 npm test              # run the test suite
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide — code style, commit conventions, PR process, and project architecture.
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=optimistengineer/remoat&type=date&legend=top-left)](https://www.star-history.com/#optimistengineer/remoat&type=date&legend=top-left)
 
 ## License
 
