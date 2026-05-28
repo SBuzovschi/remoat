@@ -138,6 +138,8 @@ const userStopRequestedChannels = new Set<string>();
 
 /** Channels where the user is expected to type plan edit instructions */
 const planEditPendingChannels = new Map<string, { projectName: string }>();
+/** Channels where the user is expected to type a custom write-in response for a question option */
+const questionWriteInPendingChannels = new Map<string, { projectName: string; optionIndex: number; optionText: string; isMultiSelect: boolean; submitText: string | null }>();
 /** Cached plan content pages per channel */
 const planContentCache = new Map<string, string[]>();
 
@@ -1558,6 +1560,25 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
             const lastInfo = detector.getLastDetectedInfo();
             const submitText = lastInfo?.submitText || null;
 
+            // Probe if this option requires a custom write-in response
+            const hasTextInput = await detector.probeOptionHasTextInput(
+                questionOptionAction.optionIndex,
+                questionOptionAction.optionText
+            );
+            if (hasTextInput) {
+                const key = channelKey(ch);
+                questionWriteInPendingChannels.set(key, {
+                    projectName: projectName || '',
+                    optionIndex: questionOptionAction.optionIndex,
+                    optionText: questionOptionAction.optionText,
+                    isMultiSelect: questionOptionAction.isMultiSelect,
+                    submitText,
+                });
+                await ctx.answerCallbackQuery({ text: 'Type your custom answer in the chat' });
+                await bot.api.sendMessage(ch.chatId, `✍️ <b>Введите ваш вариант ответа:</b>\n\nВы выбрали вариант, требующий ручного ввода. Напишите текст ответа в чат.`, { parse_mode: 'HTML', message_thread_id: ch.threadId });
+                return;
+            }
+
             const success = await detector.clickOption(
                 questionOptionAction.optionIndex,
                 questionOptionAction.optionText,
@@ -1901,6 +1922,41 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
                 inboundImages: [],
                 options: { chatSessionService, chatSessionRepo, topicManager, titleGenerator },
             }).catch((e) => logger.error('[planEdit] dispatch failed:', e));
+            return;
+        }
+
+        // Question write-in option text interception
+        const pendingWriteIn = questionWriteInPendingChannels.get(key);
+        if (pendingWriteIn) {
+            if (text === '/cancel') {
+                questionWriteInPendingChannels.delete(key);
+                await ctx.reply('Ввод ответа отменен.');
+                return;
+            }
+
+            questionWriteInPendingChannels.delete(key);
+            const resolved = await resolveWorkspaceAndCdp(ch);
+            const cdp = (resolved.ok ? resolved.cdp : null) ?? getCurrentCdp(bridge);
+            const detector = cdp ? bridge.pool.getQuestionDetector(pendingWriteIn.projectName) : undefined;
+            if (!detector) {
+                await ctx.reply('⚠️ Соединение с CDP утеряно. Не удалось отправить ответ.');
+                return;
+            }
+
+            await ctx.reply('Отправка вашего ответа в IDE...');
+            const success = await detector.clickOption(
+                pendingWriteIn.optionIndex,
+                pendingWriteIn.optionText,
+                pendingWriteIn.isMultiSelect,
+                pendingWriteIn.submitText,
+                text
+            );
+
+            if (success) {
+                await ctx.reply('✅ Ответ успешно отправлен в IDE.');
+            } else {
+                await ctx.reply('❌ Не удалось отправить ответ. Возможно, окно вопроса было закрыто.');
+            }
             return;
         }
 

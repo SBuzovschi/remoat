@@ -34,7 +34,7 @@ This Code of Conduct applies within all project spaces — GitHub issues, pull r
 
 ## Reporting
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project maintainers via [GitHub Issues](https://github.com/optimistengineer/Remoat/issues).
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project maintainers via [GitHub Issues](https://github.com/sbuzovschi/Remoat/issues).
 
 All complaints will be reviewed and investigated and will result in a response that is deemed necessary and appropriate to the circumstances.
 

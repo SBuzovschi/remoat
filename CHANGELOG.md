@@ -7,8 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [0.2.14] - 2026-04-03
 
 ### Fixed
-- Prevent tool-call output leakage by scoping extraction to first assistant-body segment ([#12](https://github.com/optimistengineer/remoat/pull/12))
-- Support walkthrough artifacts that lack Proceed buttons — thanks [@jacob-bd](https://github.com/jacob-bd) ([#7](https://github.com/optimistengineer/remoat/pull/7))
+- Prevent tool-call output leakage by scoping extraction to first assistant-body segment ([#12](https://github.com/sbuzovschi/remoat/pull/12))
+- Support walkthrough artifacts that lack Proceed buttons — thanks [@jacob-bd](https://github.com/jacob-bd) ([#7](https://github.com/sbuzovschi/remoat/pull/7))
 - Wire `fileRefMode` plan actions through bot and supporting services for planning detector
 - Correct planning detector chip selector and add upgrade re-notification
 - Block DOM queries to latest message only in response monitor to prevent stale artifact detection
@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Make injection test platform-aware for key modifier (Cmd vs Ctrl)
 
 ### Removed
-- Dead code cleanup: unused `auth` middleware and `processLogBuffer` utility — thanks [@jacob-bd](https://github.com/jacob-bd) ([#9](https://github.com/optimistengineer/remoat/pull/9))
+- Dead code cleanup: unused `auth` middleware and `processLogBuffer` utility — thanks [@jacob-bd](https://github.com/jacob-bd) ([#9](https://github.com/sbuzovschi/remoat/pull/9))
 - Replaced empty `catch {}` blocks with `logger.debug()` calls in CDP bridge and connection pool
 
 ### Added
@@ -25,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [0.2.13] - 2026-03-28
 
 ### Fixed
-- Detect Run/Reject terminal command approval buttons and forward to Telegram (fixes [#5](https://github.com/optimistengineer/remoat/issues/5))
+- Detect Run/Reject terminal command approval buttons and forward to Telegram (fixes [#5](https://github.com/sbuzovschi/remoat/issues/5))
   - Added `run`/`execute` to allow patterns and `reject` to deny patterns
   - Fixed container lookup walking up ancestors to find both approve and deny buttons
   - Telegram inline keyboard now shows actual button labels from Antigravity UI
@@ -39,7 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [0.2.11] - 2026-03-28
 
 ### Fixed
-- Restore compatibility with Antigravity v1.21.6 DOM changes — thanks [@jacob-bd](https://github.com/jacob-bd) ([#6](https://github.com/optimistengineer/remoat/pull/6))
+- Restore compatibility with Antigravity v1.21.6 DOM changes — thanks [@jacob-bd](https://github.com/jacob-bd) ([#6](https://github.com/sbuzovschi/remoat/pull/6))
   - Model picker selectors updated for `<button>` elements (previously `<div>`)
   - Chat panel readiness detection via `#conversation` element (cascade-panel iframe removed)
   - Bare `<pre>` blocks (pipe tables) no longer produce orphan `</pre>` tags causing Telegram 400 errors
@@ -76,7 +76,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - CLI default action returns async promises for proper error handling
 
 ### Added
-- Homebrew tap install (`brew tap optimistengineer/remoat && brew install remoat`)
+- Homebrew tap install (`brew tap sbuzovschi/remoat && brew install remoat`)
 - MIT LICENSE file
 - Published to npm as `remoat@0.2.0`
 
@@ -136,6 +136,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Message chunking for responses exceeding Telegram's 4096-char limit
 - macOS and Windows launcher scripts for Antigravity with CDP
 
-[0.2.1]: https://github.com/optimistengineer/Remoat/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/optimistengineer/Remoat/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/optimistengineer/Remoat/releases/tag/v0.1.0
+[0.2.1]: https://github.com/sbuzovschi/Remoat/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/sbuzovschi/Remoat/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/sbuzovschi/Remoat/releases/tag/v0.1.0

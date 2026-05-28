@@ -46,7 +46,7 @@ export interface QuestionDetectorOptions {
 const DETECT_QUESTION_SCRIPT = `(() => {
     const panel = document.querySelector('.antigravity-agent-side-panel') || document;
 
-    const containers = Array.from(panel.querySelectorAll('[role="dialog"], .modal, .dialog, .notify-user-container, div[class*="border"][class*="rounded-lg"]'))
+    const containers = Array.from(panel.querySelectorAll('[role="dialog"], .modal, .dialog, .notify-user-container, div[class*="rounded-2xl"], div[class*="rounded-xl"], div[class*="rounded-lg"], div[class*="border"][class*="rounded-lg"]'))
         .filter(el => el.offsetParent !== null);
 
     const normalize = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
@@ -73,7 +73,11 @@ const DETECT_QUESTION_SCRIPT = `(() => {
 
         const submitBtn = buttons.find(btn => {
             const t = normalize(btn.textContent || '');
-            return ['submit', 'confirm', 'send', 'done', 'ok', '送信', '決定', '回答'].some(p => t === p || t.includes(p));
+            return [
+                'submit', 'confirm', 'send', 'done', 'ok', 'answer', 'select', 'choose',
+                '送信', '決定', '回答', '確定', '完了',
+                'отправить', 'подтвердить', 'готово', 'ок', 'ответить', 'выбрать', 'далее'
+            ].some(p => t === p || t.includes(p));
         });
 
         if (inputs.length > 0 && submitBtn) {
@@ -85,15 +89,27 @@ const DETECT_QUESTION_SCRIPT = `(() => {
                 const label = input.closest('label');
                 if (label) {
                     labelText = (label.textContent || '').trim();
-                } else {
+                } else if (input.id) {
+                    const assocLabel = container.querySelector('label[for="' + input.id + '"]') || document.querySelector('label[for="' + input.id + '"]');
+                    if (assocLabel) {
+                        labelText = (assocLabel.textContent || '').trim();
+                    }
+                }
+
+                if (!labelText) {
                     const parent = input.parentElement;
                     if (parent) {
-                        labelText = Array.from(parent.childNodes)
-                            .filter(n => n.nodeType === 3)
-                            .map(n => (n.textContent || '').trim())
-                            .join(' ');
-                        if (!labelText) {
-                            labelText = (parent.textContent || '').trim();
+                        const childLabel = parent.querySelector('label');
+                        if (childLabel) {
+                            labelText = (childLabel.textContent || '').trim();
+                        } else {
+                            labelText = Array.from(parent.childNodes)
+                                .filter(n => n.nodeType === 3)
+                                .map(n => (n.textContent || '').trim())
+                                .join(' ');
+                            if (!labelText) {
+                                labelText = (parent.textContent || '').trim();
+                            }
                         }
                     }
                 }
@@ -162,75 +178,290 @@ export function buildClickQuestionOptionScript(
     optionIndex: number,
     optionText: string,
     isMultiSelect: boolean,
-    submitText: string | null
+    submitText: string | null,
+    writeInText?: string
 ): string {
     const safeText = JSON.stringify(optionText);
     const safeSubmitText = submitText ? JSON.stringify(submitText) : 'null';
+    const safeWriteInText = writeInText ? JSON.stringify(writeInText) : 'null';
 
     return `(() => {
-        const panel = document.querySelector('.antigravity-agent-side-panel') || document;
-        const containers = Array.from(panel.querySelectorAll('[role="dialog"], .modal, .dialog, .notify-user-container, div[class*="border"][class*="rounded-lg"]'))
-            .filter(el => el.offsetParent !== null);
-
-        const normalize = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
-        const wantedText = ${safeText};
-        const wantedSubmit = ${safeSubmitText};
-
-        for (const container of containers) {
-            const inputs = Array.from(container.querySelectorAll('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="radio"]'))
+        try {
+            const panel = document.querySelector('.antigravity-agent-side-panel') || document;
+            const containers = Array.from(panel.querySelectorAll('[role="dialog"], .modal, .dialog, .notify-user-container, div[class*="rounded-2xl"], div[class*="rounded-xl"], div[class*="rounded-lg"], div[class*="border"][class*="rounded-lg"]'))
                 .filter(el => el.offsetParent !== null);
 
-            const buttons = Array.from(container.querySelectorAll('button'))
-                .filter(btn => btn.offsetParent !== null);
+            const normalize = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+            const wantedText = ${safeText};
+            const wantedSubmit = ${safeSubmitText};
+            const writeInVal = ${safeWriteInText};
 
-            if (inputs.length > 0) {
-                let targetInput = inputs[${optionIndex}];
-                if (!targetInput) {
-                    targetInput = inputs.find(input => {
-                        let labelText = '';
-                        const label = input.closest('label');
-                        if (label) labelText = label.textContent || '';
-                        else if (input.parentElement) labelText = input.parentElement.textContent || '';
-                        return normalize(labelText).includes(normalize(wantedText));
-                    });
-                }
+            // Let's first search all containers for one that has an input or button matching wantedText.
+            let bestContainer = null;
+            let targetInput = null;
+            let targetBtn = null;
 
-                if (targetInput) {
-                    targetInput.click();
-                    if (!isMultiSelect && wantedSubmit) {
-                        const submitBtn = buttons.find(btn => {
-                            const t = normalize(btn.textContent || '');
-                            return normalize(wantedSubmit).includes(t) || t.includes(normalize(wantedSubmit)) ||
-                                ['submit', 'confirm', 'send', 'done', 'ok', '送信', '決定', '回答'].some(p => t === p || t.includes(p));
-                        });
-                        if (submitBtn) {
-                            setTimeout(() => { submitBtn.click(); }, 100);
+            // 1. Try to find by text match first across all containers
+            for (const container of containers) {
+                const inputs = Array.from(container.querySelectorAll('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="radio"]'))
+                    .filter(el => el.offsetParent !== null);
+
+                // Find input by label text
+                const foundInput = inputs.find(input => {
+                    let labelText = '';
+                    const label = input.closest('label');
+                    if (label) {
+                        labelText = label.textContent || '';
+                    } else if (input.id) {
+                        const assocLabel = container.querySelector('label[for="' + input.id + '"]') || document.querySelector('label[for="' + input.id + '"]');
+                        if (assocLabel) labelText = assocLabel.textContent || '';
+                    }
+                    if (!labelText && input.parentElement) {
+                        const childLabel = input.parentElement.querySelector('label');
+                        if (childLabel) {
+                            labelText = childLabel.textContent || '';
+                        } else {
+                            labelText = input.parentElement.textContent || '';
                         }
                     }
-                    return { ok: true, type: 'input_clicked' };
+                    return normalize(labelText).includes(normalize(wantedText));
+                });
+
+                if (foundInput) {
+                    bestContainer = container;
+                    targetInput = foundInput;
+                    break;
+                }
+
+                // If not found in inputs, try to find in buttons
+                const buttons = Array.from(container.querySelectorAll('button'))
+                    .filter(btn => btn.offsetParent !== null);
+                
+                const choiceButtons = buttons.filter(btn => {
+                    const t = (btn.textContent || '').trim();
+                    if (!t || t.length > 50) return false;
+                    const classes = normalize(btn.className || '');
+                    if (classes.includes('icon') || classes.includes('close') || classes.includes('collapse')) return false;
+                    return true;
+                });
+
+                const foundBtn = choiceButtons.find(btn => normalize(btn.textContent || '').includes(normalize(wantedText)));
+                if (foundBtn) {
+                    bestContainer = container;
+                    targetBtn = foundBtn;
+                    break;
                 }
             }
 
-            const choiceButtons = buttons.filter(btn => {
-                const t = (btn.textContent || '').trim();
-                if (!t || t.length > 50) return false;
-                const classes = normalize(btn.className || '');
-                if (classes.includes('icon') || classes.includes('close') || classes.includes('collapse')) return false;
-                return true;
-            });
+            // 2. If no text match was found, fall back to matching by index across containers
+            if (!targetInput && !targetBtn) {
+                for (const container of containers) {
+                    const inputs = Array.from(container.querySelectorAll('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="radio"]'))
+                        .filter(el => el.offsetParent !== null);
 
-            let targetBtn = choiceButtons[${optionIndex}];
-            if (!targetBtn) {
-                targetBtn = choiceButtons.find(btn => normalize(btn.textContent || '').includes(normalize(wantedText)));
+                    const buttons = Array.from(container.querySelectorAll('button'))
+                        .filter(btn => btn.offsetParent !== null);
+
+                    const submitBtn = buttons.find(btn => {
+                        const t = normalize(btn.textContent || '');
+                        return [
+                            'submit', 'confirm', 'send', 'done', 'ok', 'answer', 'select', 'choose',
+                            '送信', '決定', '回答', '確定', '完了',
+                            'отправить', 'подтвердить', 'готово', 'ок', 'ответить', 'выбрать', 'далее'
+                        ].some(p => t === p || t.includes(p));
+                    });
+
+                    if (inputs.length > 0 && submitBtn) {
+                        targetInput = inputs[${optionIndex}];
+                        if (targetInput) {
+                            bestContainer = container;
+                            break;
+                        }
+                    }
+
+                    const choiceButtons = buttons.filter(btn => {
+                        const t = (btn.textContent || '').trim();
+                        if (!t || t.length > 50) return false;
+                        const classes = normalize(btn.className || '');
+                        if (classes.includes('icon') || classes.includes('close') || classes.includes('collapse')) return false;
+                        return true;
+                    });
+
+                    if (choiceButtons.length >= 2) {
+                        targetBtn = choiceButtons[${optionIndex}];
+                        if (targetBtn) {
+                            bestContainer = container;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Now perform the action on the matched element
+            if (targetInput) {
+                // Click label if it exists to ensure synthetic events in React trigger
+                const label = targetInput.closest('label');
+                if (label) {
+                    try { label.click(); } catch (e) {}
+                }
+
+                // Select/Check the input using React value tracker bypass
+                try {
+                    if (targetInput.tagName === 'INPUT') {
+                        const nativeCheckedSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked')?.set;
+                        if (nativeCheckedSetter) {
+                            nativeCheckedSetter.call(targetInput, true);
+                        } else {
+                            targetInput.checked = true;
+                        }
+                    } else {
+                        // For custom role="checkbox"/"radio" divs
+                        targetInput.setAttribute('aria-checked', 'true');
+                    }
+                } catch (e) {}
+
+                try { targetInput.click(); } catch (e) {}
+                try {
+                    targetInput.dispatchEvent(new Event('click', { bubbles: true }));
+                    targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+                } catch (e) {}
+
+                let writeInSuccess = false;
+                if (writeInVal !== null) {
+                    const parent = targetInput.closest('label, div, p, li') || targetInput.parentElement;
+                    let textInput = parent ? parent.querySelector('input[type="text"], input:not([type="radio"]):not([type="checkbox"]):not([type="submit"]):not([type="button"]), textarea') : null;
+                    if (!textInput && parent) {
+                        const nextSibs = Array.from(parent.parentElement ? parent.parentElement.children : []);
+                        const indexInParent = nextSibs.indexOf(parent);
+                        if (indexInParent !== -1) {
+                            for (let j = indexInParent; j < nextSibs.length && j < indexInParent + 2; j++) {
+                                textInput = nextSibs[j].querySelector('input[type="text"], input:not([type="radio"]):not([type="checkbox"]):not([type="submit"]):not([type="button"]), textarea');
+                                if (textInput) break;
+                            }
+                        }
+                    }
+                    if (textInput) {
+                        try {
+                            textInput.focus();
+                            const nativeValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+                            if (nativeValueSetter) {
+                                nativeValueSetter.call(textInput, writeInVal);
+                            } else {
+                                textInput.value = writeInVal;
+                            }
+                            textInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            textInput.dispatchEvent(new Event('change', { bubbles: true }));
+                            writeInSuccess = true;
+                        } catch (e) {}
+                    }
+                }
+
+                let submitBtnFound = false;
+                if (!${isMultiSelect} && wantedSubmit) {
+                    const containerToSearch = bestContainer || document;
+                    const buttons = Array.from(containerToSearch.querySelectorAll('button'))
+                        .filter(btn => btn.offsetParent !== null);
+
+                    const submitBtn = buttons.find(btn => {
+                        const t = normalize(btn.textContent || '');
+                        return normalize(wantedSubmit).includes(t) || t.includes(normalize(wantedSubmit)) ||
+                            [
+                                'submit', 'confirm', 'send', 'done', 'ok', 'answer', 'select', 'choose',
+                                '送信', '決定', '回答', '確定', '完了',
+                                'отправить', 'подтвердить', 'готово', 'ок', 'ответить', 'выбрать', 'далее'
+                            ].some(p => t === p || t.includes(p));
+                    });
+                    if (submitBtn) {
+                        submitBtnFound = true;
+                        setTimeout(() => {
+                            try {
+                                // Ensure it's not disabled, or force enable it to bypass React propagation delays
+                                submitBtn.disabled = false;
+                                submitBtn.click();
+                            } catch (e) {}
+                        }, 150);
+                    }
+                }
+                return { ok: true, type: 'input_clicked', writeInSuccess, submitBtnFound };
             }
 
             if (targetBtn) {
                 targetBtn.click();
                 return { ok: true, type: 'button_clicked' };
             }
+
+            return { ok: false, error: 'Option not found' };
+        } catch (globalError) {
+            return { ok: false, error: globalError.message || String(globalError) };
+        }
+    })()`;
+}
+
+/**
+ * Script to check if a specific question option has an associated text input field.
+ */
+export function buildProbeQuestionOptionScript(optionIndex: number, optionText?: string): string {
+    const safeText = optionText ? JSON.stringify(optionText) : 'null';
+    return `(() => {
+        const panel = document.querySelector('.antigravity-agent-side-panel') || document;
+        const containers = Array.from(panel.querySelectorAll('[role="dialog"], .modal, .dialog, .notify-user-container, div[class*="rounded-2xl"], div[class*="rounded-xl"], div[class*="rounded-lg"], div[class*="border"][class*="rounded-lg"]'))
+            .filter(el => el.offsetParent !== null);
+
+        const normalize = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+        const wantedText = ${safeText};
+
+        let targetInput = null;
+
+        if (wantedText) {
+            for (const container of containers) {
+                const inputs = Array.from(container.querySelectorAll('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="radio"]'))
+                    .filter(el => el.offsetParent !== null);
+
+                const foundInput = inputs.find(input => {
+                    let labelText = '';
+                    const label = input.closest('label');
+                    if (label) {
+                        labelText = label.textContent || '';
+                    } else if (input.id) {
+                        const assocLabel = container.querySelector('label[for="' + input.id + '"]') || document.querySelector('label[for="' + input.id + '"]');
+                        if (assocLabel) labelText = assocLabel.textContent || '';
+                    }
+                    if (!labelText && input.parentElement) {
+                        const childLabel = input.parentElement.querySelector('label');
+                        if (childLabel) {
+                            labelText = childLabel.textContent || '';
+                        } else {
+                            labelText = input.parentElement.textContent || '';
+                        }
+                    }
+                    return normalize(labelText).includes(normalize(wantedText));
+                });
+
+                if (foundInput) {
+                    targetInput = foundInput;
+                    break;
+                }
+            }
         }
 
-        return { ok: false, error: 'Option not found' };
+        if (!targetInput) {
+            for (const container of containers) {
+                const inputs = Array.from(container.querySelectorAll('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="radio"]'))
+                    .filter(el => el.offsetParent !== null);
+
+                if (inputs.length > 0) {
+                    targetInput = inputs[${optionIndex}];
+                    if (targetInput) break;
+                }
+            }
+        }
+
+        if (targetInput) {
+            const parent = targetInput.closest('label, div, p, li') || targetInput.parentElement;
+            const textInput = parent ? parent.querySelector('input[type="text"], input:not([type="radio"]):not([type="checkbox"]):not([type="submit"]):not([type="button"]), textarea') : null;
+            return { ok: true, hasTextInput: !!textInput };
+        }
+        return { ok: false, hasTextInput: false };
     })()`;
 }
 
@@ -240,30 +471,39 @@ export function buildClickQuestionOptionScript(
 export function buildClickQuestionSubmitScript(submitText: string): string {
     const safeSubmitText = JSON.stringify(submitText);
     return `(() => {
-        const panel = document.querySelector('.antigravity-agent-side-panel') || document;
-        const containers = Array.from(panel.querySelectorAll('[role="dialog"], .modal, .dialog, .notify-user-container, div[class*="border"][class*="rounded-lg"]'))
-            .filter(el => el.offsetParent !== null);
+        try {
+            const panel = document.querySelector('.antigravity-agent-side-panel') || document;
+            const containers = Array.from(panel.querySelectorAll('[role="dialog"], .modal, .dialog, .notify-user-container, div[class*="rounded-2xl"], div[class*="rounded-xl"], div[class*="rounded-lg"], div[class*="border"][class*="rounded-lg"]'))
+                .filter(el => el.offsetParent !== null);
 
-        const normalize = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
-        const wantedSubmit = ${safeSubmitText};
+            const normalize = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+            const wantedSubmit = ${safeSubmitText};
 
-        for (const container of containers) {
-            const buttons = Array.from(container.querySelectorAll('button'))
-                .filter(btn => btn.offsetParent !== null);
+            for (const container of containers) {
+                const buttons = Array.from(container.querySelectorAll('button'))
+                    .filter(btn => btn.offsetParent !== null);
 
-            const submitBtn = buttons.find(btn => {
-                const t = normalize(btn.textContent || '');
-                return normalize(wantedSubmit).includes(t) || t.includes(normalize(wantedSubmit)) ||
-                    ['submit', 'confirm', 'send', 'done', 'ok', '送信', '決定', '回答'].some(p => t === p || t.includes(p));
-            });
+                const submitBtn = buttons.find(btn => {
+                    const t = normalize(btn.textContent || '');
+                    return normalize(wantedSubmit).includes(t) || t.includes(normalize(wantedSubmit)) ||
+                        [
+                            'submit', 'confirm', 'send', 'done', 'ok', 'answer', 'select', 'choose',
+                            '送信', '決定', '回答', '確定', '完了',
+                            'отправить', 'подтвердить', 'готово', 'ок', 'ответить', 'выбрать', 'далее'
+                        ].some(p => t === p || t.includes(p));
+                });
 
-            if (submitBtn) {
-                submitBtn.click();
-                return { ok: true };
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.click();
+                    return { ok: true };
+                }
             }
-        }
 
-        return { ok: false, error: 'Submit button not found' };
+            return { ok: false, error: 'Submit button not found' };
+        } catch (globalError) {
+            return { ok: false, error: globalError.message || String(globalError) };
+        }
     })()`;
 }
 
@@ -380,13 +620,34 @@ export class QuestionDetector {
     /**
      * Select/Click a specific option.
      */
-    async clickOption(optionIndex: number, optionText: string, isMultiSelect: boolean, submitText: string | null): Promise<boolean> {
+    async clickOption(optionIndex: number, optionText: string, isMultiSelect: boolean, submitText: string | null, writeInText?: string): Promise<boolean> {
         try {
-            const expression = buildClickQuestionOptionScript(optionIndex, optionText, isMultiSelect, submitText);
+            const expression = buildClickQuestionOptionScript(optionIndex, optionText, isMultiSelect, submitText, writeInText);
             const result = await this.runEvaluateScript(expression);
+            if (result && !result.ok) {
+                logger.error('[QuestionDetector] clickOption failed. Script result error:', result.error || JSON.stringify(result));
+            } else if (!result) {
+                logger.error('[QuestionDetector] clickOption returned null/undefined script result');
+            } else {
+                logger.info('[QuestionDetector] clickOption succeeded. Result:', JSON.stringify(result));
+            }
             return result?.ok === true;
         } catch (error) {
             logger.error('[QuestionDetector] Error while clicking option:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Probe if a specific option has an associated text input field.
+     */
+    async probeOptionHasTextInput(optionIndex: number, optionText?: string): Promise<boolean> {
+        try {
+            const expression = buildProbeQuestionOptionScript(optionIndex, optionText);
+            const result = await this.runEvaluateScript(expression);
+            return result?.ok === true && result?.hasTextInput === true;
+        } catch (error) {
+            logger.error('[QuestionDetector] Error while probing option text input:', error);
             return false;
         }
     }
@@ -398,6 +659,11 @@ export class QuestionDetector {
         try {
             const expression = buildClickQuestionSubmitScript(submitText);
             const result = await this.runEvaluateScript(expression);
+            if (result && !result.ok) {
+                logger.error('[QuestionDetector] clickSubmit failed. Script result error:', result.error || JSON.stringify(result));
+            } else if (!result) {
+                logger.error('[QuestionDetector] clickSubmit returned null/undefined script result');
+            }
             return result?.ok === true;
         } catch (error) {
             logger.error('[QuestionDetector] Error while clicking submit:', error);

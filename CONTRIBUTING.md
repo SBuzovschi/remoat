@@ -11,7 +11,7 @@ Thanks for your interest in contributing. This guide covers everything you need 
 ## Getting Started
 
 ```bash
-git clone https://github.com/optimistengineer/Remoat.git
+git clone https://github.com/sbuzovschi/Remoat.git
 cd Remoat
 npm install
 cp .env.example .env
@@ -125,12 +125,12 @@ npx jest tests/services/cdpService.test.ts
 
 ## Finding Work
 
-- Check [open issues](https://github.com/optimistengineer/Remoat/issues) — look for `good first issue` labels
-- Browse the [Discussions](https://github.com/optimistengineer/Remoat/discussions) for ideas and questions
+- Check [open issues](https://github.com/sbuzovschi/Remoat/issues) — look for `good first issue` labels
+- Browse the [Discussions](https://github.com/sbuzovschi/Remoat/discussions) for ideas and questions
 
 ## Reporting Bugs
 
-Use the [bug report template](https://github.com/optimistengineer/Remoat/issues/new?template=bug_report.md). Include:
+Use the [bug report template](https://github.com/sbuzovschi/Remoat/issues/new?template=bug_report.md). Include:
 
 - Steps to reproduce
 - Expected vs actual behavior

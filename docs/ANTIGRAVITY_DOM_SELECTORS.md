@@ -272,6 +272,24 @@ Antigravity renders code blocks in a non-standard way.
 | `[class*="rounded-t"][class*="border-b"]` | Header bar (removed during normalization) | `assistantDomExtractor.ts` |
 | `.code-line, [class*="code-line"]` | Individual code lines | `assistantDomExtractor.ts` |
 
+## 12. Multiple-Choice Questions and Standalone Choice Prompts
+
+Interactive user prompts displayed by the agent (e.g. from `ask_question` tool).
+
+### Detection
+
+| Selector | Purpose | File |
+|----------|---------|------|
+| `input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="radio"]` | Option selection elements | `questionDetector.ts` |
+| `button` (all visible) | Choice button options or submit button | `questionDetector.ts` |
+| `[role="dialog"], .modal, .dialog, .notify-user-container, div[class*="border"][class*="rounded-lg"]` | Outer container | `questionDetector.ts` |
+
+### Option & Title Extraction
+
+- **Option text**: Extracted from associated `<label>`, parent node text, or `aria-label`/`title` attributes.
+- **Question text**: Extracted from `h1`, `h2`, `h3`, `h4`, `strong`, `p`, or element containing `title`/`heading` inside the card.
+- **Submit button**: Identified by button text matching `submit`, `confirm`, `send`, `done`, `ok`, `送信`, `決定`, `回答`, `Answer`.
+
 ---
 
 ## Maintenance Notes

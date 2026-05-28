@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/optimistengineer/Remoat/blob/main/LICENSE"><img src="https://img.shields.io/github/license/optimistengineer/Remoat?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/sbuzovschi/Remoat/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sbuzovschi/Remoat?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square&logo=node.js" alt="Node.js" />
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform" />
 </p>
@@ -61,7 +61,7 @@ npm install -g remoat
 Or with Homebrew (macOS/Linux):
 
 ```bash
-brew tap optimistengineer/remoat
+brew tap sbuzovschi/remoat
 brew install remoat
 ```
 
@@ -126,7 +126,7 @@ This pulls `base.en` (~140 MB). Requires `cmake` (`brew install cmake` on macOS,
 ### From source
 
 ```bash
-git clone https://github.com/optimistengineer/Remoat.git
+git clone https://github.com/sbuzovschi/Remoat.git
 cd Remoat
 npm install
 cp .env.example .env
@@ -292,7 +292,7 @@ locales/        i18n translations (en, ja)
 Contributions are welcome — whether it's a bug fix, a new feature, documentation improvements, or test coverage.
 
 ```bash
-git clone https://github.com/optimistengineer/Remoat.git
+git clone https://github.com/sbuzovschi/Remoat.git
 cd Remoat
 npm install
 cp .env.example .env  # fill in your values
