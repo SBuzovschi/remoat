@@ -1546,12 +1546,29 @@ export class CdpService extends EventEmitter {
         }
 
         // Antigravity 1.21.6+ uses <button> elements; older versions use <div>.
-        // Use tag-agnostic class-based selector to support both.
+        // The dropdown popover is not in the DOM until the trigger button is clicked.
         const expression = `(async () => {
-            return Array.from(document.querySelectorAll('button, div'))
-                .filter(e => e.className.includes('px-2 py-1') && e.className.includes('w-full') && e.className.includes('items-center') && e.className.includes('justify-between'))
+            const btns = Array.from(document.querySelectorAll('button'));
+            const trigger = btns.find(b => b.className.includes('h-7') && b.className.includes('rounded-lg') && b.className.includes('text-xs') && (b.textContent.includes('Gemini') || b.textContent.includes('Claude') || b.textContent.includes('GPT') || b.textContent.includes('DeepSeek')));
+            
+            let opened = false;
+            if (trigger && trigger.getAttribute('aria-expanded') !== 'true') {
+                trigger.click();
+                opened = true;
+                await new Promise(r => setTimeout(r, 150));
+            }
+
+            const models = Array.from(document.querySelectorAll('button, div'))
+                .filter(e => e.className.includes('px-2') && e.className.includes('py-1') && e.className.includes('w-full') && e.className.includes('items-center') && e.className.includes('justify-between'))
                 .map(e => (e.textContent || '').trim().replace(/New$/, '').trim())
                 .filter(t => t.length > 0 && t.length < 60);
+                
+            if (opened) {
+                trigger.click();
+                await new Promise(r => setTimeout(r, 100));
+            }
+
+            return models;
         })()`;
 
         try {
@@ -1583,11 +1600,11 @@ export class CdpService extends EventEmitter {
         if (!this.isConnectedFlag || !this.ws) {
             return null;
         }
-        // Antigravity 1.21.6+ uses <button> elements; older versions use <div>.
+        // Read the text from the trigger button which displays the current model
         const expression = `(() => {
-            var selected = Array.from(document.querySelectorAll('button, div'))
-                .find(e => e.className.includes('px-2 py-1') && e.className.includes('w-full') && e.className.includes('items-center') && e.className.includes('justify-between') && e.className.includes('bg-gray-500/20') && !e.className.includes('hover:bg-gray-500/20'));
-            return selected ? (selected.textContent || '').trim().replace(/New$/, '').trim() : null;
+            const btns = Array.from(document.querySelectorAll('button'));
+            const trigger = btns.find(b => b.className.includes('h-7') && b.className.includes('rounded-lg') && b.className.includes('text-xs') && (b.textContent.includes('Gemini') || b.textContent.includes('Claude') || b.textContent.includes('GPT') || b.textContent.includes('DeepSeek')));
+            return trigger ? (trigger.textContent || '').trim().replace(/New$/, '').trim() : null;
         })()`;
         try {
             const contextId = this.getPrimaryContextId();
@@ -1619,11 +1636,22 @@ export class CdpService extends EventEmitter {
         const expression = `(async () => {
             const targetModel = ${safeModel};
 
-            // Get all items in the model list (button in 1.21.6+, div in older)
+            const btns = Array.from(document.querySelectorAll('button'));
+            const trigger = btns.find(b => b.className.includes('h-7') && b.className.includes('rounded-lg') && b.className.includes('text-xs') && (b.textContent.includes('Gemini') || b.textContent.includes('Claude') || b.textContent.includes('GPT') || b.textContent.includes('DeepSeek')));
+            
+            let openedByUs = false;
+            if (trigger && trigger.getAttribute('aria-expanded') !== 'true') {
+                trigger.click();
+                openedByUs = true;
+                await new Promise(r => setTimeout(r, 150));
+            }
+
+            // Get all items in the model list
             const modelItems = Array.from(document.querySelectorAll('button, div'))
-                .filter(e => e.className.includes('px-2 py-1') && e.className.includes('w-full') && e.className.includes('items-center') && e.className.includes('justify-between'));
+                .filter(e => e.className.includes('px-2') && e.className.includes('py-1') && e.className.includes('w-full') && e.className.includes('items-center') && e.className.includes('justify-between'));
 
             if (modelItems.length === 0) {
+                if (trigger && trigger.getAttribute('aria-expanded') === 'true') trigger.click();
                 return { ok: false, error: 'Model list not found. The dropdown may not be open.' };
             }
 
@@ -1634,28 +1662,24 @@ export class CdpService extends EventEmitter {
             });
 
             if (!targetItem) {
+                if (trigger && trigger.getAttribute('aria-expanded') === 'true') trigger.click();
                 const available = modelItems.map(el => (el.textContent || '').trim().replace(/New$/, '').trim()).join(', ');
                 return { ok: false, error: 'Model "' + targetModel + '" not found. Available: ' + available };
             }
 
-            // Check if already selected
-            if (targetItem.className.includes('bg-gray-500/20') && !targetItem.className.includes('hover:bg-gray-500/20')) {
-                return { ok: true, model: targetModel, alreadySelected: true };
-            }
-
             // Click to select model
             targetItem.click();
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 250));
 
-            // Verify selection was applied
-            const updatedItems = Array.from(document.querySelectorAll('button, div'))
-                .filter(e => e.className.includes('px-2 py-1') && e.className.includes('w-full') && e.className.includes('items-center') && e.className.includes('justify-between'));
-            const selectedItem = updatedItems.find(el => {
-                const text = (el.textContent || '').trim().replace(/New$/, '').trim();
-                return text === targetModel || text.toLowerCase() === targetModel.toLowerCase();
-            });
+            // Ensure the popover is closed (clicking a model usually closes it, but if not, click trigger to close)
+            if (trigger && trigger.getAttribute('aria-expanded') === 'true') {
+                trigger.click();
+                await new Promise(r => setTimeout(r, 100));
+            }
 
-            if (selectedItem && selectedItem.className.includes('bg-gray-500/20') && !selectedItem.className.includes('hover:bg-gray-500/20')) {
+            // Verify via trigger text instead of looking at the selected item inside the closed popover
+            const newTriggerText = trigger ? (trigger.textContent || '').trim().replace(/New$/, '').trim() : '';
+            if (newTriggerText === targetModel || newTriggerText.toLowerCase() === targetModel.toLowerCase()) {
                 return { ok: true, model: targetModel, verified: true };
             }
 
