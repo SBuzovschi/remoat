@@ -300,31 +300,40 @@ export function buildClickQuestionOptionScript(
             // Now perform the action on the matched element
             if (targetInput) {
                 // Click label if it exists to ensure synthetic events in React trigger
-                const label = targetInput.closest('label');
+                let label = targetInput.closest('label');
+                if (!label && targetInput.id) {
+                    label = document.querySelector('label[for="' + targetInput.id + '"]');
+                }
+                
+                let clicked = false;
                 if (label) {
-                    try { label.click(); } catch (e) {}
+                    try { 
+                        label.click(); 
+                        clicked = true;
+                    } catch (e) {}
                 }
 
-                // Select/Check the input using React value tracker bypass
-                try {
-                    if (targetInput.tagName === 'INPUT') {
-                        const nativeCheckedSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked')?.set;
-                        if (nativeCheckedSetter) {
-                            nativeCheckedSetter.call(targetInput, true);
+                if (!clicked) {
+                    // Select/Check the input using React value tracker bypass
+                    try {
+                        if (targetInput.tagName === 'INPUT') {
+                            const nativeCheckedSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked')?.set;
+                            if (nativeCheckedSetter) {
+                                nativeCheckedSetter.call(targetInput, true);
+                            } else {
+                                targetInput.checked = true;
+                            }
                         } else {
-                            targetInput.checked = true;
+                            // For custom role="checkbox"/"radio" divs
+                            targetInput.setAttribute('aria-checked', 'true');
                         }
-                    } else {
-                        // For custom role="checkbox"/"radio" divs
-                        targetInput.setAttribute('aria-checked', 'true');
-                    }
-                } catch (e) {}
+                    } catch (e) {}
 
-                try { targetInput.click(); } catch (e) {}
-                try {
-                    targetInput.dispatchEvent(new Event('click', { bubbles: true }));
-                    targetInput.dispatchEvent(new Event('change', { bubbles: true }));
-                } catch (e) {}
+                    try { targetInput.click(); } catch (e) {}
+                    try {
+                        targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    } catch (e) {}
+                }
 
                 let writeInSuccess = false;
                 if (writeInVal !== null) {
@@ -364,6 +373,7 @@ export function buildClickQuestionOptionScript(
 
                     const submitBtn = buttons.find(btn => {
                         const t = normalize(btn.textContent || '');
+                        if (!t) return false;
                         return normalize(wantedSubmit).includes(t) || t.includes(normalize(wantedSubmit)) ||
                             [
                                 'submit', 'confirm', 'send', 'done', 'ok', 'answer', 'select', 'choose',
@@ -373,13 +383,28 @@ export function buildClickQuestionOptionScript(
                     });
                     if (submitBtn) {
                         submitBtnFound = true;
-                        setTimeout(() => {
+                        const clickSubmitBtn = () => {
                             try {
-                                // Ensure it's not disabled, or force enable it to bypass React propagation delays
                                 submitBtn.disabled = false;
+                                submitBtn.removeAttribute('disabled');
+                                submitBtn.setAttribute('aria-disabled', 'false');
+                                // Full event sequence for React compatibility
+                                const rect = submitBtn.getBoundingClientRect();
+                                const cx = rect.left + rect.width / 2;
+                                const cy = rect.top + rect.height / 2;
+                                const evtInit = { bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0 };
+                                submitBtn.dispatchEvent(new PointerEvent('pointerdown', evtInit));
+                                submitBtn.dispatchEvent(new MouseEvent('mousedown', evtInit));
+                                submitBtn.dispatchEvent(new PointerEvent('pointerup', evtInit));
+                                submitBtn.dispatchEvent(new MouseEvent('mouseup', evtInit));
                                 submitBtn.click();
+                                submitBtn.dispatchEvent(new MouseEvent('click', evtInit));
                             } catch (e) {}
-                        }, 150);
+                        };
+                        // First attempt after 300ms (give React state time to propagate)
+                        setTimeout(clickSubmitBtn, 300);
+                        // Retry after 600ms in case first click was swallowed
+                        setTimeout(clickSubmitBtn, 600);
                     }
                 }
                 return { ok: true, type: 'input_clicked', writeInSuccess, submitBtnFound };
@@ -479,25 +504,54 @@ export function buildClickQuestionSubmitScript(submitText: string): string {
             const normalize = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
             const wantedSubmit = ${safeSubmitText};
 
+            const isSubmitButton = (btn) => {
+                const t = normalize(btn.textContent || '');
+                if (!t) return false;
+                // Skip file-tree / tab buttons (have draggable or contain img)
+                if (btn.getAttribute('draggable') === 'true') return false;
+                if (btn.querySelector('img')) return false;
+                return normalize(wantedSubmit).includes(t) || t.includes(normalize(wantedSubmit)) ||
+                    [
+                        'submit', 'confirm', 'send', 'done', 'ok', 'answer', 'select', 'choose',
+                        '送信', '決定', '回答', '確定', '完了',
+                        'отправить', 'подтвердить', 'готово', 'ок', 'ответить', 'выбрать', 'далее'
+                    ].some(p => t === p || t.includes(p));
+            };
+
+            const clickBtn = (btn) => {
+                btn.disabled = false;
+                btn.removeAttribute('disabled');
+                btn.setAttribute('aria-disabled', 'false');
+                const rect = btn.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                const evtInit = { bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0 };
+                btn.dispatchEvent(new PointerEvent('pointerdown', evtInit));
+                btn.dispatchEvent(new MouseEvent('mousedown', evtInit));
+                btn.dispatchEvent(new PointerEvent('pointerup', evtInit));
+                btn.dispatchEvent(new MouseEvent('mouseup', evtInit));
+                btn.click();
+                btn.dispatchEvent(new MouseEvent('click', evtInit));
+            };
+
+            // 1. Search inside detected containers first
             for (const container of containers) {
                 const buttons = Array.from(container.querySelectorAll('button'))
                     .filter(btn => btn.offsetParent !== null);
-
-                const submitBtn = buttons.find(btn => {
-                    const t = normalize(btn.textContent || '');
-                    return normalize(wantedSubmit).includes(t) || t.includes(normalize(wantedSubmit)) ||
-                        [
-                            'submit', 'confirm', 'send', 'done', 'ok', 'answer', 'select', 'choose',
-                            '送信', '決定', '回答', '確定', '完了',
-                            'отправить', 'подтвердить', 'готово', 'ок', 'ответить', 'выбрать', 'далее'
-                        ].some(p => t === p || t.includes(p));
-                });
-
+                const submitBtn = buttons.find(isSubmitButton);
                 if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.click();
-                    return { ok: true };
+                    clickBtn(submitBtn);
+                    return { ok: true, source: 'container' };
                 }
+            }
+
+            // 2. Fallback: search ALL visible buttons in the panel
+            const allButtons = Array.from(panel.querySelectorAll('button'))
+                .filter(btn => btn.offsetParent !== null);
+            const submitBtn = allButtons.find(isSubmitButton);
+            if (submitBtn) {
+                clickBtn(submitBtn);
+                return { ok: true, source: 'panel_fallback' };
             }
 
             return { ok: false, error: 'Submit button not found' };

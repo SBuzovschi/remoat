@@ -1583,7 +1583,7 @@ export const startBot = async (cliLogLevel?: LogLevel) => {
                 questionOptionAction.optionIndex,
                 questionOptionAction.optionText,
                 questionOptionAction.isMultiSelect,
-                submitText
+                null // Don't auto-submit; user must press Submit button explicitly
             );
 
             if (success) {

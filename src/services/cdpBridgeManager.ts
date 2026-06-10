@@ -548,7 +548,11 @@ export function ensureQuestionDetector(
 
             let text = `❓ <b>Antigravity Question</b>\n\n`;
             text += `<b>${escapeHtml(info.question)}</b>\n\n`;
-            text += `<i>Pick an option:</i>\n`;
+            info.options.forEach((opt, index) => {
+                const prefix = opt.isMultiSelect ? '☐' : `${index + 1}.`;
+                text += `${prefix} ${escapeHtml(opt.text)}\n`;
+            });
+            text += `\n<i>Select an option, then press Submit:</i>\n`;
             text += `<b>Workspace:</b> ${escapeHtml(projectName)}`;
 
             const keyboard = new InlineKeyboard();
@@ -561,10 +565,9 @@ export function ensureQuestionDetector(
                 }
             });
 
-            if (info.submitText) {
-                keyboard.row();
-                keyboard.text(`✅ ${info.submitText}`, buildQuestionSubmitCustomId(info.submitText, projectName, targetChannelStr));
-            }
+            keyboard.row();
+            const submitLabel = info.submitText || 'Submit';
+            keyboard.text(`✅ ${submitLabel}`, buildQuestionSubmitCustomId(submitLabel, projectName, targetChannelStr));
 
             const msgId = await sendTelegramMessage(bridge.botApi, targetChannel, text, keyboard);
             if (msgId) {
